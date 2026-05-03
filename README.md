@@ -1,2 +1,4 @@
 # USBSentry-Core
-Zero-Trust Forensics &amp; Access Control System for UPES Minor Project
+USBSentry-Core is an advanced, automated digital forensics and access control framework designed to secure local hardware interfaces against sophisticated data leak vectors and malware infiltration via external storage media. Developed as a pre-final year minor project at the University of Petroleum and Energy Studies (UPES), Dehradun, the system operates on a zero-trust principle, utilizing real-time WMI event polling to intercept and quarantine newly mounted USB devices before they can interact with the host operating system.
+
+By integrating a custom forensic engine—USBSentryBrain—the platform performs deep file-level analysis to identify risk markers such as extension spoofing, hidden executable scripts, and known malware signatures. Beyond detection, the system provides an enterprise-grade management dashboard built with ttkbootstrap, offering security professionals real-time threat distribution analytics, automated forensic advice, and persistent SQLite3-based audit logging for comprehensive incident response and post-event investigation.

@@ -1,29 +1,38 @@
 import sqlite3
-from datetime import datetime
+import os
+
+DB_NAME = "usb_sentry_forensics.db"
 
 def init_db():
-    conn = sqlite3.connect("usb_sentry_forensics.db")
+    """Initializes the SQLite database with professional forensic columns."""
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    # We MUST have device_id in this CREATE statement
+    # Adding specific columns for Score, Category, and Advice
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS audit_logs (
+        CREATE TABLE IF NOT EXISTS scan_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             device_id TEXT,
-            action_taken TEXT,
-            details TEXT
+            threat_level TEXT,
+            category TEXT,
+            score INTEGER,
+            file_info TEXT,
+            advice TEXT
         )
     ''')
     conn.commit()
     conn.close()
 
-def log_event(device_id, action, details):
-    conn = sqlite3.connect("usb_sentry_forensics.db")
-    cursor = conn.cursor()
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute('''
-        INSERT INTO audit_logs (timestamp, device_id, action_taken, details)
-        VALUES (?, ?, ?, ?)
-    ''', (timestamp, device_id, action, details))
-    conn.commit()
-    conn.close()
+def log_event(device_id, level, category, score, file_info, advice):
+    """Logs a detailed forensic record for the UPES project audit."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO scan_logs (device_id, threat_level, category, score, file_info, advice)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (device_id, level, category, score, file_info, advice))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DATABASE ERROR] Failed to log forensic event: {e}")

@@ -1,27 +1,13 @@
-import wmi
-import os
-import subprocess
-import time
+import wmi, os, subprocess, time
 from brain import USBSentryBrain
 from database import init_db, log_event
 
-def set_forensic_lock(drive_letter, lock=True):
-    """
-    Forensic Workaround: Sets all files on the USB to Read-Only 
-    to prevent accidental execution or modification during scanning.
-    """
+def set_forensic_lock(drive, lock=True):
     mode = "+r" if lock else "-r"
-    try:
-        # Using Windows attrib command to set Read-Only attribute
-        subprocess.run(['attrib', mode, f"{drive_letter}\\*", '/s', '/d'], capture_output=True)
-        status = "LOCKED (Read-Only)" if lock else "UNLOCKED (Read-Write)"
-        print(f"[SYSTEM] USB Forensic State: {status}")
-    except Exception as e:
-        print(f"[!] Warning: Could not set forensic lock: {e}")
+    subprocess.run(['attrib', mode, f"{drive}\\*", '/s', '/d'], capture_output=True)
 
 def get_usb_drive():
     c = wmi.WMI()
-    # DriveType=2 identifies Removable Media (USB)
     for disk in c.Win32_LogicalDisk(DriveType=2):
         return disk.DeviceID
     return None
@@ -32,56 +18,42 @@ def start_gatekeeper():
     watcher = c.watch_for(notification_type="Creation", wmi_class="Win32_USBHub")
 
     print("====================================================")
-    print("      SENTINEL USB: ADVANCED FORENSIC AUDIT         ")
+    print("      SENTINEL USB: MULTI-LAYER AUDIT ACTIVE        ")
     print("====================================================")
 
     while True:
         try:
-            usb_device = watcher()
-            device_id = usb_device.DeviceID
-            
-            # Allow time for drive mounting
+            watcher()
             time.sleep(2)
-            
             drive = get_usb_drive()
             if drive:
-                print(f"\n[!] DEVICE DETECTED: {device_id}")
-                print(f"Volume {drive} detected. Initializing Forensic Scan...")
-                
-                total_files = 0
-                threat_count = 0
+                print(f"\n[!] SCANNING VOLUME {drive}...")
+                total, threats = 0, 0
 
-                # SCAN FIRST while files are accessible
-                for root, dirs, files in os.walk(drive + "\\"):
-                    for file_name in files:
-                        total_files += 1
-                        file_path = os.path.join(root, file_name)
-                        
-                        score, category, label, advice = brain.calculate_threat_score(file_path)
-                        
-                        # Standard terminal output
+                for root, _, files in os.walk(drive + "\\"):
+                    for f_name in files:
+                        total += 1
+                        path = os.path.join(root, f_name)
+                        score, cat, label, adv = brain.calculate_threat_score(path)
+
                         if label == "Extreme":
-                            threat_count += 1
-                            print(f"  [!!!] EXTREME: {file_name} (Known Malware)")
+                            threats += 1
+                            print(f" [!!!] EXTREME: {f_name} ({adv})")
                         elif label == "High":
-                            threat_count += 1
-                            print(f"  [!] HIGH RISK: {file_name} (Header Mismatch)")
+                            threats += 1
+                            print(f"  [!] HIGH RISK: {f_name} (SPOOFED)")
                         elif label == "Medium":
-                            print(f"  [-] SUSPICIOUS: {file_name} (Active Code)")
+                            threats += 1
+                            print(f"  [-] SUSPICIOUS: {f_name} (EXTENSIBLE)")
                         else:
-                            print(f"  [+] VERIFIED: {file_name}")
+                            print(f"  [+] VERIFIED: {f_name}")
+                        
+                        log_event(drive, label, cat, score, f_name, adv)
 
-                        log_event(device_id, label, f"{category}: {file_name}")
-
-                # APPLY LOCK AFTER SCAN to protect the system
-                set_forensic_lock(drive, lock=True)
-
-                print(f"\nAUDIT COMPLETE FOR {drive}:")
-                print(f" - Scanned: {total_files} | High/Extreme Threats: {threat_count}")
+                set_forensic_lock(drive, True)
+                print(f"\nAUDIT COMPLETE. Threats: {threats}/{total}")
                 print("====================================================")
-
-        except Exception as e:
-            print(f"\n[ERROR] {e}")
+        except Exception as e: print(f"Error: {e}")
 
 if __name__ == "__main__":
     init_db()

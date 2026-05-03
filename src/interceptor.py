@@ -1,60 +1,64 @@
-import wmi, os, subprocess, time
-from brain import USBSentryBrain
-from database import init_db, log_event
-
-def set_forensic_lock(drive, lock=True):
-    mode = "+r" if lock else "-r"
-    subprocess.run(['attrib', mode, f"{drive}\\*", '/s', '/d'], capture_output=True)
+import psutil
+import os
+import subprocess
 
 def get_usb_drive():
-    c = wmi.WMI()
-    for disk in c.Win32_LogicalDisk(DriveType=2):
-        return disk.DeviceID
+    """
+    Scans the system for removable disk drives.
+    Returns the drive letter (e.g., 'E') if a new USB is detected.
+    """
+    for partition in psutil.disk_partitions():
+        # 'removable' detects USB sticks; 'cdrom' is excluded for forensics
+        if 'removable' in partition.opts:
+            # We return just the letter to keep path handling clean in gui.py
+            return partition.mountpoint.replace(":\\", "").replace(":", "")
     return None
 
-def start_gatekeeper():
-    brain = USBSentryBrain()
-    c = wmi.WMI()
-    watcher = c.watch_for(notification_type="Creation", wmi_class="Win32_USBHub")
+def set_forensic_lock(drive_letter, lock_state):
+    """
+    Handles the 'Mounting' logic for the UPES Forensic Sentry project.
+    
+    Logic:
+    - If lock_state is True: The drive is 'Mounted' into the system from the sandbox 
+      but set to READ-ONLY to preserve forensic integrity.
+    - If lock_state is False: The drive is released from write-protection (Unmounted/User Access).
+    """
+    try:
+        # drive_path translates the letter back to a Windows root path
+        drive_path = f"{drive_letter}:\\"
+        
+        if lock_state:
+            # Applying the 'Read-Only' attribute to all files (+r)
+            # This simulates the transition from 'Sandbox' to 'Forensic Mount'.
+            # /s processes matching files in the current folder and all subfolders.
+            # /d processes folders as well.
+            command = f'attrib +r "{drive_path}*.*" /s /d'
+            subprocess.run(command, shell=True, check=True, capture_output=True)
+            print(f"[SYSTEM] Forensic Lock Engaged: {drive_letter} is now Read-Only.")
+        else:
+            # Removing the 'Read-Only' attribute (-r) to 'Release' the drive
+            command = f'attrib -r "{drive_path}*.*" /s /d'
+            subprocess.run(command, shell=True, check=True, capture_output=True)
+            print(f"[SYSTEM] Forensic Lock Released: {drive_letter} is now Writable.")
+            
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Failed to change drive state: {e}")
+        return False
+    except Exception as e:
+        print(f"[ERROR] Unexpected interceptor error: {e}")
+        return False
 
-    print("====================================================")
-    print("      SENTINEL USB: MULTI-LAYER AUDIT ACTIVE        ")
-    print("====================================================")
-
-    while True:
-        try:
-            watcher()
-            time.sleep(2)
-            drive = get_usb_drive()
-            if drive:
-                print(f"\n[!] SCANNING VOLUME {drive}...")
-                total, threats = 0, 0
-
-                for root, _, files in os.walk(drive + "\\"):
-                    for f_name in files:
-                        total += 1
-                        path = os.path.join(root, f_name)
-                        score, cat, label, adv = brain.calculate_threat_score(path)
-
-                        if label == "Extreme":
-                            threats += 1
-                            print(f" [!!!] EXTREME: {f_name} ({adv})")
-                        elif label == "High":
-                            threats += 1
-                            print(f"  [!] HIGH RISK: {f_name} (SPOOFED)")
-                        elif label == "Medium":
-                            threats += 1
-                            print(f"  [-] SUSPICIOUS: {f_name} (EXTENSIBLE)")
-                        else:
-                            print(f"  [+] VERIFIED: {f_name}")
-                        
-                        log_event(drive, label, cat, score, f_name, adv)
-
-                set_forensic_lock(drive, True)
-                print(f"\nAUDIT COMPLETE. Threats: {threats}/{total}")
-                print("====================================================")
-        except Exception as e: print(f"Error: {e}")
-
-if __name__ == "__main__":
-    init_db()
-    start_gatekeeper()
+def verify_sandbox_isolation(drive_letter):
+    """
+    A helper function for your presentation to 'prove' the sandbox is active.
+    It checks if the system can write a dummy file; if it fails, isolation is working.
+    """
+    test_file = f"{drive_letter}:\\sandbox_test.tmp"
+    try:
+        with open(test_file, 'w') as f:
+            f.write("test")
+        os.remove(test_file)
+        return False # Not isolated
+    except IOError:
+        return True # Isolated/Read-Only

@@ -1,6 +1,6 @@
 import os
+import magic
 import hashlib
-import json
 
 class USBSentryBrain:
     def __init__(self):
@@ -9,30 +9,42 @@ class USBSentryBrain:
             "jpg": b"\xff\xd8\xff", "jpeg": b"\xff\xd8\xff",
             "exe": b"MZ", "dll": b"MZ", "bat": b"@", "ps1": b"#"
         }
-        self.sig_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "signatures.json"))
+
+    def get_file_hash(self, file_path):
+        """Generates MD5 hash for forensic identification."""
+        hash_md5 = hashlib.md5()
+        try:
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except:
+            return "Hash Unavailable"
+
+    def get_actual_mime(self, file_path):
+        try: return magic.from_file(file_path, mime=True)
+        except: return "unknown/binary"
 
     def calculate_threat_score(self, file_path):
         try:
+            f_hash = self.get_file_hash(file_path)
             with open(file_path, 'rb') as f:
-                content = f.read(2048) # Read header
+                content = f.read(2048) 
             
-            # Get the real extension
             ext = file_path.split('.')[-1].lower()
+            actual_mime = self.get_actual_mime(file_path)
 
-            # LAYER 1: EICAR VIRUS
             if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in content:
-                return 100, "Malware", "Extreme", "EICAR Test Virus Found"
+                return 100, "Malware", "Extreme", "EICAR Test Virus Found", actual_mime, f_hash
 
-            # LAYER 2: DFA HEADER MISMATCH (SPOOFING)
             if ext in self.signature_mapping:
                 expected = self.signature_mapping[ext]
                 if expected and not content.startswith(expected):
-                    return 85, "Spoofed File", "High", f"Header mismatch for .{ext}"
+                    return 85, "Spoofed File", "High", f"Header mismatch for .{ext}", actual_mime, f_hash
 
-            # LAYER 3: EXTENSIBLE FILES (The Teacher's Requirement)
             if ext in ['exe', 'bat', 'vbs', 'ps1', 'msi', 'scr']:
-                return 60, "Extensible Code", "Medium", "Active script/executable detected"
+                return 60, "Extensible Code", "Medium", "Active script detected", actual_mime, f_hash
 
-            return 0, "Verified", "Low", "No threats detected"
-        except:
-            return 0, "Unscannable", "Review", "Access denied"
+            return 0, "Verified", "Low", "No threats detected", actual_mime, f_hash
+        except Exception as e:
+            return 0, "Unscannable", "Review", f"Error: {str(e)}", "unknown", "N/A"

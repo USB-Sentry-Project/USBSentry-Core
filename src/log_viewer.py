@@ -1,40 +1,33 @@
 import sqlite3
 import os
+from database import DB_PATH  # This now points to the absolute path in /src
 
-def view_audit_trail():
-    db_path = "usb_sentry_forensics.db"
-    
-    if not os.path.exists(db_path):
-        print("\n[!] No Forensic Vault found. Run the Interceptor first to generate logs.")
+def view_forensic_vault():
+    if not os.path.exists(DB_PATH):
+        print("\n[!] No Forensic Vault found. Run a scan in the Dashboard first to generate logs.")
         return
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-
-        # Added ORDER BY id ASC to ensure serial numbers are perfectly in order
-        cursor.execute("SELECT id, timestamp, device_id, action_taken, details FROM audit_logs ORDER BY id ASC")
+        
+        # Pulling the full history from the permanent database
+        cursor.execute("SELECT id, timestamp, file_name, threat_level, score, advice FROM scan_logs ORDER BY id ASC")
         rows = cursor.fetchall()
 
-        print("\n" + "="*100)
-        print(f"{'ID':<4} | {'TIMESTAMP':<20} | {'ACTION':<15} | {'DETAILS'}")
-        print("-" * 100)
-
         if not rows:
-            print("No logs found in the Forensic Vault.")
+            print("\n[!] The Forensic Vault is currently empty.")
         else:
+            print(f"\n{'='*100}")
+            print(f"{'ID':<5} | {'TIMESTAMP':<20} | {'FILE NAME':<30} | {'THREAT':<10} | {'SCORE':<7} | {'ADVICE'}")
+            print(f"{'-'*100}")
             for row in rows:
-                log_id, ts, dev_id, action, details = row
-                # Clean up timestamp display
-                clean_ts = ts.split(".")[0] 
-                print(f"{log_id:<4} | {clean_ts:<20} | {action:<15} | {details}")
+                print(f"{row[0]:<5} | {row[1]:<20} | {row[2]:<30} | {row[3]:<10} | {row[4]:<7} | {row[5]}")
+            print(f"{'='*100}\n")
 
-        print("="*100)
-        print(f"Total Forensic Records: {len(rows)}")
         conn.close()
-
     except Exception as e:
-        print(f"Error reading Forensic Vault: {e}")
+        print(f"[!] Error accessing the vault: {e}")
 
 if __name__ == "__main__":
-    view_audit_trail()
+    view_forensic_vault()

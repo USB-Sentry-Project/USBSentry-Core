@@ -4,7 +4,7 @@ from database import DB_PATH  # This now points to the absolute path in /src
 
 def view_forensic_vault():
     if not os.path.exists(DB_PATH):
-        print("\n[!] No Forensic Vault found. Run a scan in the Dashboard first to generate logs.")
+        print("\n""[!] No logs found. Run a scan first.")
         return
 
     try:

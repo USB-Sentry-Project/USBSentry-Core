@@ -58,13 +58,23 @@ class USBSentryPro:
             btn = tb.Button(self.sidebar, text=text, bootstyle="outline-info", width=20, command=cmd)
             btn.pack(pady=10, padx=25)
 
+        # --- EXIT BUTTON (Bottom Left) ---
+        self.exit_btn = tb.Button(
+            self.sidebar, 
+            text="🚪 EXIT", 
+            bootstyle="outline-danger", 
+            width=20, 
+            command=self.root.destroy 
+        )
+        self.exit_btn.pack(side=BOTTOM, pady=30, padx=25)
+
         # --- MAIN WORKSPACE ---
         self.workspace = tb.Frame(self.root, padding=25)
         self.workspace.pack(side=RIGHT, fill=BOTH, expand=True)
         self.workspace.configure(style='Workspace.TFrame')
         self.style.configure('Workspace.TFrame', background='#0B0E14')
 
-        self.status_title = tb.Label(self.workspace, text="SYSTEM READY: MONITORING PORTS", 
+        self.status_title = tb.Label(self.workspace, text="System Ready - Monitoring USB Devices", 
                                      font=("Garamond", 26, "bold"), foreground="#4E97D1", background="#0B0E14")
         self.status_title.pack(anchor=W, pady=(0, 15))
 
@@ -115,7 +125,7 @@ class USBSentryPro:
         self.graph_canvas.pack(side=LEFT, fill=BOTH, expand=True)
         self.graph_v_scroll.pack(side=RIGHT, fill=Y)
 
-        self.investigation_panel = tb.Labelframe(self.bottom_row, text=" FORENSIC EVIDENCE LOG ", bootstyle="danger", width=500)
+        self.investigation_panel = tb.Labelframe(self.bottom_row, text="EVIDENCE LOG ", bootstyle="danger", width=500)
         self.investigation_panel.pack(side=RIGHT, fill=BOTH, expand=False)
         self.investigation_panel.pack_propagate(False)
         
@@ -173,13 +183,13 @@ class USBSentryPro:
         if f_name in self.active_scan_full_data:
             info = self.active_scan_full_data[f_name]
             if info['risk'] == "Extreme":
-                rec = "Dangerous malware signature found. This file is a security threat. Access is blocked; quarantine or deletion is required."
+                rec = "Malware signature detected. This file may be harmful. It is recommended to delete or isolate it."
             elif info['risk'] == "High":
-                rec = "Forensic anomaly detected. The file type does not match its header, indicating spoofing. Do not trust this file."
+                rec = "File type does not match its content. This may indicate spoofing. Avoid opening this file."
             elif info['risk'] == "Medium":
                 rec = "Potential script risk. This is an executable format that could run hidden tasks. Verify source before proceeding."
             else:
-                rec = "Clean forensic profile. No malicious signatures detected. The file is safe for standard operations."
+                rec = "No issues or malicious signatures detected during scan. File appears safe for normal use."
             details = f"FILE: {f_name}\n------------------------------------------\nRISK LEVEL: {info['risk'].upper()}\nFORENSIC HASH: {info['hash']}\nTHREAT SCORE: {info['score']}/100\nFILE TYPE: {info['mime']}\n\nSYSTEM RECOMMENDATION:\n{rec}"
             self.evidence_text.config(text=details)
 

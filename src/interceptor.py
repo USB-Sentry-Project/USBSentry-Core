@@ -3,10 +3,9 @@ import os
 import subprocess
 
 def get_usb_drive():
-    """
-    Scans the system for removable disk drives.
-    Returns the drive letter (e.g., 'E') if a new USB is detected.
-    """
+    # Checks for removable drives (USB devices)
+    # Returns drive letter like 'E' when detected
+    
     for partition in psutil.disk_partitions():
         # 'removable' detects USB sticks; 'cdrom' is excluded for forensics
         if 'removable' in partition.opts:
@@ -14,7 +13,7 @@ def get_usb_drive():
             return partition.mountpoint.replace(":\\", "").replace(":", "")
     return None
 
-def set_forensic_lock(drive_letter, lock_state):
+def set_forensic_lock(drive_letter, lock_state):                                # Note: Detection depends on system flags and may vary across OS versions
     """
     Handles the 'Mounting' logic for the UPES Forensic Sentry project.
     

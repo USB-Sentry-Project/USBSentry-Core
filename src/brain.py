@@ -11,7 +11,8 @@ class USBSentryBrain:
         }
 
     def get_file_hash(self, file_path):
-        """Generates MD5 hash for forensic identification."""
+        # Using MD5 for quick identification (faster for large scans).
+        # Not using SHA-256 since cryptographic security is not required here.
         hash_md5 = hashlib.md5()
         try:
             with open(file_path, "rb") as f:
@@ -25,6 +26,10 @@ class USBSentryBrain:
         try: return magic.from_file(file_path, mime=True)
         except: return "unknown/binary"
 
+    # NOTE:
+    # This detection is heuristic-based and not a full antivirus engine.
+    # Advanced or zero-day malware may not be detected.
+    
     def calculate_threat_score(self, file_path):
         try:
             f_hash = self.get_file_hash(file_path)
@@ -43,8 +48,10 @@ class USBSentryBrain:
                     return 85, "Spoofed File", "High", f"Header mismatch for .{ext}", actual_mime, f_hash
 
             if ext in ['exe', 'bat', 'vbs', 'ps1', 'msi', 'scr']:
-                return 60, "Extensible Code", "Medium", "Active script detected", actual_mime, f_hash
-
-            return 0, "Verified", "Low", "No threats detected", actual_mime, f_hash
+                # Executable or script file – could run hidden operations
+                return 58, "Executable File", "Medium", "Script or binary detected", actual_mime, f_hash
+            
+            # No obvious indicators found (basic heuristic check only)
+            return 0, "Clean", "Low", "No immediate threats detected", actual_mime, f_hash
         except Exception as e:
             return 0, "Unscannable", "Review", f"Error: {str(e)}", "unknown", "N/A"

@@ -23,6 +23,9 @@ def init_db():
                      access_count INTEGER DEFAULT 1)''')
     conn.commit()
     conn.close()
+    
+    # Always inserting new rows instead of updating,
+    # so we keep full scan history for analysis
 
 def log_event(device_id, file_name, claimed_ext, actual_mime, threat_level, category, score, file_size, advice):
     try:

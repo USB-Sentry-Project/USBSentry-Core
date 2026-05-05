@@ -26,7 +26,7 @@ class USBSentryPro:
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.style = tb.Style(theme="darkly") # Modern, professional base theme
         
-        # TABLE STYLING - SUBTLE & CLEAN
+        # TABLE STYLING
         self.style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), foreground="#4E97D1")
         self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=32, background="#151921", fieldbackground="#151921")
         
@@ -58,14 +58,8 @@ class USBSentryPro:
             btn = tb.Button(self.sidebar, text=text, bootstyle="outline-info", width=20, command=cmd)
             btn.pack(pady=10, padx=25)
 
-        # --- EXIT BUTTON (Bottom Left) ---
-        self.exit_btn = tb.Button(
-            self.sidebar, 
-            text="🚪 EXIT", 
-            bootstyle="outline-danger", 
-            width=20, 
-            command=self.root.destroy 
-        )
+        # EXIT BUTTON (Bottom Left)
+        self.exit_btn = tb.Button(self.sidebar, text="🚪 EXIT SYSTEM", bootstyle="outline-danger", width=20, command=self.root.destroy)
         self.exit_btn.pack(side=BOTTOM, pady=30, padx=25)
 
         # --- MAIN WORKSPACE ---
@@ -91,15 +85,16 @@ class USBSentryPro:
         self.tree_scroll = tb.Scrollbar(self.table_card, orient=VERTICAL)
         self.tree_scroll.pack(side=RIGHT, fill=Y)
 
-        self.tree = tb.Treeview(self.table_card, columns=(1,2,3,4,5,6), 
-                                show="headings", yscrollcommand=self.tree_scroll.set)
+        self.tree = tb.Treeview(self.table_card, columns=(1,2,3,4,5,6), show="headings", yscrollcommand=self.tree_scroll.set)
         self.tree.pack(fill=BOTH, expand=True)
         self.tree_scroll.config(command=self.tree.yview)
         
-        # PROFESSIONAL COLOR TAGS
+        # COLOR TAGS - FIXED WITH PURPLE REVIEW
         self.tree.tag_configure('extreme', foreground="#E25C5C", font=("Segoe UI", 10, "bold")) 
         self.tree.tag_configure('high', foreground="#F3A63B")    
+        self.tree.tag_configure('medium', foreground="#F3A63B") 
         self.tree.tag_configure('low', foreground="#63B3ED")    
+        self.tree.tag_configure('review', foreground="#BB86FC", font=("Segoe UI", 10, "italic")) 
         self.tree.tag_configure('historical', foreground="#718096") 
         self.tree.tag_configure('system', foreground="#48BB78") 
         self.tree.bind("<<TreeviewSelect>>", self.on_file_select)
@@ -115,13 +110,11 @@ class USBSentryPro:
         self.graph_canvas = tk.Canvas(self.analysis_panel, bg="#151921", highlightthickness=0)
         self.graph_v_scroll = tb.Scrollbar(self.analysis_panel, orient=VERTICAL, command=self.graph_canvas.yview)
         self.graph_container = tb.Frame(self.graph_canvas)
-        
         self.graph_container.configure(style='Graph.TFrame')
         self.style.configure('Graph.TFrame', background='#151921')
 
         self.graph_canvas.create_window((0, 0), window=self.graph_container, anchor=NW)
         self.graph_canvas.configure(yscrollcommand=self.graph_v_scroll.set)
-        
         self.graph_canvas.pack(side=LEFT, fill=BOTH, expand=True)
         self.graph_v_scroll.pack(side=RIGHT, fill=Y)
 
@@ -132,6 +125,52 @@ class USBSentryPro:
         self.evidence_text = tb.Label(self.investigation_panel, text="Select a record to investigate...", 
                                       font=("Segoe UI", 10, "bold"), wraplength=450, justify=LEFT, anchor=NW, background="#151921", foreground="#D1D5DB")
         self.evidence_text.pack(fill=BOTH, expand=True, padx=20, pady=20)
+
+    def on_file_select(self, event):
+        selected = self.tree.selection()
+        if not selected: return
+        data = self.tree.item(selected[0], 'values')
+        f_name = data[0] if self.view_mode == "DASHBOARD" else data[2]
+        
+        if f_name in self.active_scan_full_data:
+            info = self.active_scan_full_data[f_name]
+            rec = "SECURE: Forensic profile is clean. No malicious patterns identified."
+            
+            if info['risk'] == "Extreme":
+                rec = "CRITICAL: Malware or Trojan masking detected. Do not execute. This file poses a high risk to system integrity."
+            elif info['risk'] == "High":
+                rec = "WARNING: Extension/Header mismatch detected (Spoofing). This is a common delivery method for Trojans."
+            elif info['risk'] == "Review":
+                if "Protected" in info['adv']:
+                    rec = "ENCRYPTED: Password protection detected. The system cannot verify the payload. View at own risk."
+                else:
+                    rec = "UNCERTAIN: Unknown file signature. Forensic profile is incomplete. Manual verification is required."
+            elif info['risk'] == "Medium":
+                rec = "ADVISORY: Executable/Script content identified. Ensure this file is from a verified source before running."
+
+            details = (f"FILE: {f_name}\n{'-'*42}\nRISK LEVEL: {info['risk'].upper()}\nFORENSIC HASH: {info['hash']}\n"
+                       f"THREAT SCORE: {info['score']}/100\nFILE TYPE: {info['mime']}\n\nSYSTEM RECOMMENDATION:\n{rec}")
+            self.evidence_text.config(text=details)
+
+    def run_forensics(self, drive):
+        try:
+            self.record_system_log("SCAN", f"Started Scan on Volume {drive}")
+            files = [os.path.join(r, f) for r, d, fs in os.walk(drive + ":\\") for f in fs]
+            self.active_scan_results, t_count = [], 0
+            for path in files:
+                score, cat, label, adv, mime, f_hash = self.brain.calculate_threat_score(path)
+                acc = f"{98.5 + (score % 1.2):.2f}%"
+                if label in ["High", "Extreme"]: t_count += 1
+                f_name = os.path.basename(path)
+                res_values = (f_name, label, cat, adv, acc)
+                self.active_scan_results.append({'values': res_values, 'tag': label.lower()})
+                self.active_scan_full_data[f_name] = {"mime": mime, "score": score, "adv": adv, "risk": label, "hash": f_hash}
+                if self.view_mode == "DASHBOARD":
+                    self.root.after(0, lambda v=res_values, t=label.lower(): self.tree.insert("", END, values=v, tags=(t,)))
+                log_event(drive, f_name, path.split('.')[-1], mime, label, cat, score, os.path.getsize(path)/1024, adv)
+            set_forensic_lock(drive, True) 
+            self.root.after(0, lambda: self.update_graphs(len(files), t_count))
+        finally: self.is_scanning = False
 
     def record_system_log(self, category, message):
         log_event("INTERNAL", "N/A", "LOG", "SYSTEM", category, "N/A", 0, 0, message)
@@ -153,12 +192,11 @@ class USBSentryPro:
             self.tree.heading(i+1, text=h, anchor=CENTER)
             self.tree.column(i+1, width=[450, 120, 180, 480, 120][i], anchor=CENTER)
         self.tree.delete(*self.tree.get_children())
-        for item in self.active_scan_results:
-            self.tree.insert("", END, values=item['values'], tags=(item['tag'],))
+        for item in self.active_scan_results: self.tree.insert("", END, values=item['values'], tags=(item['tag'],))
 
     def show_logs(self):
         self.view_mode = "LOGS"
-        self.status_title.config(text="SYSTEM AUDIT LOGS: ")
+        self.status_title.config(text="SYSTEM AUDIT LOGS")
         headers = ["ID", "TIMESTAMP", "FILE NAME", "THREAT", "SCORE", "RESULT"]
         self.tree["displaycolumns"] = ("#all") 
         for i, h in enumerate(headers):
@@ -174,45 +212,6 @@ class USBSentryPro:
                 self.tree.insert("", END, values=row, tags=(tag,))
             conn.close()
         except: pass
-
-    def on_file_select(self, event):
-        selected = self.tree.selection()
-        if not selected: return
-        data = self.tree.item(selected[0], 'values')
-        f_name = data[0] if self.view_mode == "DASHBOARD" else data[2]
-        if f_name in self.active_scan_full_data:
-            info = self.active_scan_full_data[f_name]
-            if info['risk'] == "Extreme":
-                rec = "Malware signature detected. This file may be harmful. It is recommended to delete or isolate it."
-            elif info['risk'] == "High":
-                rec = "File type does not match its content. This may indicate spoofing. Avoid opening this file."
-            elif info['risk'] == "Medium":
-                rec = "Potential script risk. This is an executable format that could run hidden tasks. Verify source before proceeding."
-            else:
-                rec = "No issues or malicious signatures detected during scan. File appears safe for normal use."
-            details = f"FILE: {f_name}\n------------------------------------------\nRISK LEVEL: {info['risk'].upper()}\nFORENSIC HASH: {info['hash']}\nTHREAT SCORE: {info['score']}/100\nFILE TYPE: {info['mime']}\n\nSYSTEM RECOMMENDATION:\n{rec}"
-            self.evidence_text.config(text=details)
-
-    def run_forensics(self, drive):
-        try:
-            self.record_system_log("SCAN", f"Started Scan on Volume {drive}")
-            files = [os.path.join(r, f) for r, d, fs in os.walk(drive + ":\\") for f in fs]
-            self.active_scan_results = []
-            t_count = 0
-            for path in files:
-                score, cat, label, adv, mime, f_hash = self.brain.calculate_threat_score(path)
-                acc = f"{98.5 + (score % 1.2):.2f}%"
-                if label in ["High", "Extreme"]: t_count += 1
-                f_name = os.path.basename(path)
-                res_values = (f_name, label, cat, adv, acc)
-                self.active_scan_results.append({'values': res_values, 'tag': label.lower()})
-                self.active_scan_full_data[f_name] = {"mime": mime, "score": score, "adv": adv, "risk": label, "hash": f_hash}
-                if self.view_mode == "DASHBOARD":
-                    self.root.after(0, lambda v=res_values, t=label.lower(): self.tree.insert("", END, values=v, tags=(t,)))
-                log_event(drive, f_name, path.split('.')[-1], mime, label, cat, score, os.path.getsize(path)/1024, adv)
-            set_forensic_lock(drive, True) 
-            self.root.after(0, lambda: self.update_graphs(len(files), t_count))
-        finally: self.is_scanning = False
 
     def monitor_usb(self):
         pythoncom.CoInitialize()
@@ -244,17 +243,18 @@ class USBSentryPro:
         conn.close()
         
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 12), dpi=100)
-        fig.patch.set_facecolor('#0B0E14') 
+        fig.patch.set_facecolor('#0B0E14')
         
-        # VIBRANT PROFESSIONAL PALETTE
+        # COMPLETE FORENSIC PALETTE
         palette = {
-            'Extreme': '#FF3366', # Vibrant Rose Red
-            'High': '#FF8800',    # Safety Orange
-            'Medium': '#FFCC00',  # Cyber Yellow
-            'Low': '#22CC88'      # Emerald Green
+            'Extreme': '#FF3366', # Red
+            'High': '#FF8800',    # Orange
+            'Medium': '#FFCC00',  # Yellow
+            'Low': '#22CC88',     # Green
+            'Review': '#BB86FC'   # Purple (Encrypted/Unscannable)
         }
         
-        # --- 1. SCATTER PLOT STYLING ---
+        # --- 1. SCATTER PLOT ---
         ax1.set_facecolor('#151921')
         ax1.grid(True, color='#2D3748', linestyle='--', linewidth=0.5, alpha=0.3)
         
@@ -262,32 +262,25 @@ class USBSentryPro:
             sizes = [row[0] for row in data]
             scores = [row[1] for row in data]
             colors = [palette.get(row[2], '#4E97D1') for row in data]
-            
-            # Larger points with high-contrast edges for a premium look
-            ax1.scatter(sizes, scores, c=colors, s=50, edgecolors='#FFFFFF', linewidth=0.7, alpha=0.9)
+            ax1.scatter(sizes, scores, c=colors, s=60, edgecolors='#FFFFFF', linewidth=0.8, alpha=0.9)
             
             if len(sizes) > 1:
                 z = np.polyfit(sizes, scores, 1)
                 p = np.poly1d(z)
-                ax1.plot(sizes, p(sizes), color="#4E97D1", linestyle=':', alpha=0.5, label="Trend")
+                ax1.plot(sizes, p(sizes), color="#4E97D1", linestyle=':', alpha=0.5)
                 
         ax1.set_title("FORENSIC THREAT CORRELATION", color='#4E97D1', fontsize=12, fontweight='bold', pad=15)
-        ax1.set_xlabel("File Size (KB)", color='#718096', fontsize=9)
-        ax1.set_ylabel("Threat Score", color='#718096', fontsize=9)
         ax1.tick_params(colors='#D1D5DB', labelsize=8)
-        for spine in ax1.spines.values(): spine.set_color('#2D3748')
 
-        # --- 2. DONUT CHART STYLING ---
+        # --- 2. DONUT CHART ---
         ax2.set_facecolor('#151921')
-        labels = ['Extreme', 'High', 'Medium', 'Low']
+        labels = ['Extreme', 'High', 'Medium', 'Low', 'Review']
         vals = [sum(1 for row in data if row[2] == l) for l in labels]
         
         if sum(vals) > 0:
-            # Create a donut chart with thicker segments
             wedges, _ = ax2.pie(vals, colors=[palette[l] for l in labels], 
                                     startangle=140, wedgeprops=dict(width=0.45, edgecolor='#151921', linewidth=2))
             
-            # Centered Status Text
             status_text = "BREACH" if threats_count > 0 else "SECURE"
             status_color = palette['Extreme'] if threats_count > 0 else palette['Low']
             
@@ -295,10 +288,9 @@ class USBSentryPro:
                      color=status_color, fontsize=15, fontweight='black')
             
             ax2.set_title("INTEGRITY HEALTH STATUS", color='#4E97D1', fontsize=12, fontweight='bold', pad=15)
-            # Professional Legend
             ax2.legend(wedges, labels, loc="center right", bbox_to_anchor=(1.3, 0.5), frameon=False, labelcolor='#D1D5DB')
         else:
-            ax2.text(0.5, 0.5, "AWAITING SCAN DATA...", ha='center', va='center', color='#4E97D1')
+            ax2.text(0.5, 0.5, "AWAITING DATA...", ha='center', va='center', color='#4E97D1')
             ax2.axis('off')
         
         plt.tight_layout(pad=3.0)
@@ -310,7 +302,4 @@ class USBSentryPro:
         self.graph_canvas.config(scrollregion=self.graph_canvas.bbox("all"))
         
 if __name__ == "__main__":
-    init_db()
-    root = tb.Window(themename="darkly")
-    app = USBSentryPro(root)
-    root.mainloop()
+    init_db(); root = tb.Window(themename="darkly"); app = USBSentryPro(root); root.mainloop()
